@@ -19,4 +19,4 @@ There are two parameters named `page` and `perPage` in the request url above，w
 localhost:8080/image/download?apge=3&perPage=30
 ```
 
-It should be noted that the value of perPage only ranges from zero to thirty，I haven't come up with a way to fetch a JSon body with tons s photos by requesting once.
+It should be noted that the value of perPage only ranges from zero to thirty，I haven't come up with a way to fetch a JSon body with tons of photos by requesting once.
