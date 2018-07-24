@@ -11,6 +11,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.redis.core.ListOperations;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -23,21 +24,38 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * @author Jordon
+ * @since 2018-07-24
+ */
 @Service
 public class ImageInfoServiceImpl extends ServiceImpl<ImageInfoDao, ImageInfo> implements ImageInfoService {
 
-    private static final String SAVING_FOLDER = "E:\\\\imgs\\\\";
+    private static final String SAVING_FOLDER = "E:\\\\wallPapers\\\\";
     private static final Map<String,String> headers = new HashMap<>();
+
+    @Resource
+    private ImageInfoDao imageInfoDao;
+    @Resource
+    private  RedisTemplate<Object,ImageInfo> redisTemplate;
+
     static {
         headers.put("Accept", "  text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8");
         headers.put("Content-Type", "text/*, application/xml, or application/xhtml+xml. Mimetype=application/json");
         headers.put("User-Agent", "  Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36");
     }
 
-    @Resource
-    private ImageInfoDao imageInfoDao;
-    @Resource
-    private RedisTemplate<Object,ImageInfo> redisTemplate;
+
+    /**
+     * 清除缓存
+     */
+    @Override
+    public void flushDB() {
+        redisTemplate.execute((RedisCallback<Object>) connection -> {
+            connection.flushDb();
+            return "ok";
+        });
+    }
 
     /**
      * 使用URL类库下载图片
@@ -89,37 +107,54 @@ public class ImageInfoServiceImpl extends ServiceImpl<ImageInfoDao, ImageInfo> i
      * 分页获取壁纸
      * @param url  请求地址
      * @param page  第几页
-     * @param perPage   煤业数据
+     * @param perPage   每页数据
      */
-    public void getData(String url, String page,String perPage) {
+    public void getData(String url, String page, String perPage, Integer type) {
         ListOperations<Object, ImageInfo> operations = redisTemplate.opsForList();
         Connection connection = Jsoup.connect(url).ignoreContentType(true);
         connection.headers(headers);
-
         connection.data("page",page);
         //每页最多获取30条数据
         connection.data("per_page", perPage);
         connection.data("order_by", "latest");
+
         try {
             Document doc = connection.get();
             List<ImageInfoVo> list =JSON.parseArray(doc.body().html(), ImageInfoVo.class);
             for (ImageInfoVo imageInfoVo : list) {
                 //check cache
                 if (redisTemplate.hasKey(imageInfoVo.getId()) && operations.size(imageInfoVo.getId()) > 0) {
-                    break;
+                    continue;
                 }
 
                 ImageInfo imageInfo = new ImageInfo();
                 BeanUtils.copyProperties(imageInfoVo, imageInfo);
-
                 imageInfo.setFull(imageInfoVo.getUrls().getFull());
                 imageInfo.setRaw(imageInfoVo.getUrls().getRaw());
                 imageInfo.setRegular(imageInfoVo.getUrls().getRegular());
                 imageInfo.setThumb(imageInfoVo.getUrls().getThumb());
+                imageInfo.setSmall(imageInfoVo.getUrls().getSmall());
 
                 imageInfoDao.insertAllColumn(imageInfo);
                 System.out.println(imageInfoVo);
-                download(imageInfo.getRaw());
+
+                switch (type){
+                    case 0:
+                        download(imageInfo.getFull());
+                        break;
+                    case 1:
+                        download(imageInfo.getRaw());
+                        break;
+                    case 2:
+                        download(imageInfo.getThumb());
+                        break;
+                    case 3:
+                        download(imageInfo.getRegular());
+                        break;
+                    default:
+                        download(imageInfo.getSmall());
+                        break;
+                }
                 //add cache
                 operations.rightPush(imageInfo.getId(), imageInfo);
             }
